@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ const (
 	vaultNamespace = "gardnlinux"
 	manifestBucket = "gardenlinux-github-releases"
 	manifestRegion = "eu-central-1"
+	uploadBucket   = "gardenlinux-test-import"
 )
 
 func publishCmd() *cobra.Command {
@@ -97,19 +99,24 @@ func runPublish(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("cannot marshal profile %s: %w", profile.Name, err)
 		}
-		fmt.Printf("---\n%s", string(profileYAML))
+
+		// fmt.Printf("---\n%s", string(profileYAML))
+		profileKey := fmt.Sprintf("meta/NSCloudProfile/%s/%s-%.8s", ver, profile.Name, commit)
+		if err = uploadSpec(cmd.Context(), profileKey, profileYAML); err != nil {
+			return fmt.Errorf("cannot upload profile %s: %w", profileKey, err)
+		}
 
 		var shootYAML []byte
 		shootYAML, err = BuildShootSpecYAML(ver, profile)
 		if err != nil {
 			return fmt.Errorf("invalid shoot spec for %s: %w", profile.Name, err)
 		}
-		fmt.Printf("---\n%s", string(shootYAML))
-		// shootKey := fmt.Sprintf("meta/ShootSpec/%s/%s", version, baseName)
-		// err = p.manifestTarget.PutObject(ctx, shootKey, bytes.NewReader(shootYAML))
-		// if err != nil {
-		// return fmt.Errorf("cannot store ShootSpec %s: %w", profile.Name, err)
-		// }
+		// fmt.Printf("---\n%s", string(shootYAML))
+		shootKey := fmt.Sprintf("meta/ShootSpec/%s/%s-%.8s", ver, profile.Name, commit)
+		err = uploadSpec(cmd.Context(), shootKey, shootYAML)
+		if err != nil {
+			return fmt.Errorf("cannot store ShootSpec %s: %w", profile.Name, err)
+		}
 	}
 
 	return nil
@@ -128,11 +135,39 @@ func runUnpublish(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
+func uploadSpec(ctx context.Context, profileKey string, profileYAML []byte) error {
+	s3Client, err := newS3Client(ctx, "se-aws-gardenlinux-integration-test/creds/glci")
+	if err != nil {
+		return fmt.Errorf("cannot create S3 client: %w", err)
+	}
+	fmt.Printf("Uploading profile: bucket=%s key=%s\n", uploadBucket, profileKey)
+
+	err = putS3Object(ctx, s3Client, uploadBucket, profileKey, profileYAML)
+	if err != nil {
+		return fmt.Errorf("cannot upload profile %s: %w", profileKey, err)
+	}
+	return nil
+}
+
+func putS3Object(ctx context.Context, client *s3.Client, bucket string, key string, profileYAML []byte) error {
+	_, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:          &bucket,
+		Key:             &key,
+		Body:            bytes.NewReader(profileYAML),
+		ContentEncoding: new("utf-8"),
+		ContentType:     new("text/yaml"),
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // downloadManifest authenticates with Vault, downloads the manifest for the
 // given version, commit, platform prefix, and architecture from S3,
 // and returns the full parsed Manifest.
 func downloadManifest(ctx context.Context, ver, commit, prefix, arch string) (*Manifest, error) {
-	s3Client, err := newS3Client(ctx)
+	s3Client, err := newS3Client(ctx, "se-aws-gardenlinux/creds/glci")
 	if err != nil {
 		return nil, fmt.Errorf("cannot create S3 client: %w", err)
 	}
@@ -164,13 +199,13 @@ func downloadManifest(ctx context.Context, ver, commit, prefix, arch string) (*M
 }
 
 // newS3Client creates an S3 client using credentials obtained from Vault.
-func newS3Client(ctx context.Context) (*s3.Client, error) {
+func newS3Client(ctx context.Context, vaultAWSPath string) (*s3.Client, error) {
 	token := os.Getenv("VAULT_TOKEN")
 	if token == "" {
 		return nil, fmt.Errorf("VAULT_TOKEN environment variable is not set")
 	}
 
-	awsKey, awsSecret, awsToken, err := vaultAWSCreds(ctx, token)
+	awsKey, awsSecret, awsToken, err := vaultAWSCreds(ctx, token, vaultAWSPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot obtain AWS credentials from Vault: %w", err)
 	}
@@ -189,8 +224,8 @@ func newS3Client(ctx context.Context) (*s3.Client, error) {
 }
 
 // vaultAWSCreds logs into Vault with the given token and reads AWS credentials
-// for the manifest source bucket.
-func vaultAWSCreds(ctx context.Context, token string) (key, secret, sessionToken string, err error) {
+// for the given Vault AWS secrets path.
+func vaultAWSCreds(ctx context.Context, token, vaultAWSPath string) (key, secret, sessionToken string, err error) {
 	cfg := vaultapi.DefaultConfig()
 	cfg.Address = vaultServer
 
@@ -207,7 +242,6 @@ func vaultAWSCreds(ctx context.Context, token string) (key, secret, sessionToken
 		return "", "", "", fmt.Errorf("Vault token validation failed: %w", err2)
 	}
 
-	const vaultAWSPath = "se-aws-gardenlinux/creds/glci"
 	data, err2 := client.Logical().ReadWithContext(ctx, vaultAWSPath)
 	if err2 != nil {
 		return "", "", "", fmt.Errorf("cannot read AWS credentials from Vault path %s: %w", vaultAWSPath, err2)
