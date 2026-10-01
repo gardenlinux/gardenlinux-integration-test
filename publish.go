@@ -122,19 +122,6 @@ func runPublish(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runUnpublish(cmd *cobra.Command, _ []string) error {
-	ver, _ := cmd.Flags().GetString("version")
-	commit, _ := cmd.Flags().GetString("commit")
-
-	for _, p := range platformManifestKeys {
-		_, err := downloadManifest(cmd.Context(), ver, commit, p.prefix, p.arch)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: skipping %s/%s: %v\n", p.prefix, p.arch, err)
-		}
-	}
-	return nil
-}
-
 func uploadSpec(ctx context.Context, profileKey string, profileYAML []byte) error {
 	s3Client, err := newS3Client(ctx, "se-aws-gardenlinux-integration-test/creds/glci")
 	if err != nil {
@@ -149,13 +136,15 @@ func uploadSpec(ctx context.Context, profileKey string, profileYAML []byte) erro
 	return nil
 }
 
+func strPtr(s string) *string { return &s }
+
 func putS3Object(ctx context.Context, client *s3.Client, bucket string, key string, profileYAML []byte) error {
 	_, err := client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:          &bucket,
 		Key:             &key,
 		Body:            bytes.NewReader(profileYAML),
-		ContentEncoding: new("utf-8"),
-		ContentType:     new("text/yaml"),
+		ContentEncoding: strPtr("utf-8"),
+		ContentType:     strPtr("text/yaml"),
 	})
 	if err != nil {
 		return err
