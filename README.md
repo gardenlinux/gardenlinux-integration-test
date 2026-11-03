@@ -93,13 +93,11 @@ go run . unpublish -v 2150.12.0 -c <commit-id>
 
 ## Background & References
 
-The design of this tool was worked out in [gardenlinux/gardenlinux#4070](https://github.com/gardenlinux/gardenlinux/issues/4070). Key decisions and reference material from that issue are captured below.
-
 ### NamespacedCloudProfile
 
 A `NamespacedCloudProfile` is a Gardener CRD that extends a parent `CloudProfile` with additional machine images, scoped to a single namespace (project). It avoids modifying the shared cluster-wide `CloudProfile` while still allowing a project to test pre-release images.
 
-**Example for Garden Linux 1877.15 on AWS** (from [comment by Vincinator, Apr 2026](https://github.com/gardenlinux/gardenlinux/issues/4070#issuecomment-4351538082)):
+**Example for Garden Linux 1877.15 on AWS** :
 
 ```yaml
 apiVersion: core.gardener.cloud/v1beta1
@@ -136,7 +134,7 @@ spec:
           architecture: arm64
 ```
 
-**Provider config type definitions** (from [comment by SujanaSubr, Jun 2026](https://github.com/gardenlinux/gardenlinux/issues/4070#issuecomment-4678170834)):
+**Provider config type definitions** :
 
 | Provider | Type definitions |
 |---|---|
@@ -151,7 +149,7 @@ spec:
 
 The `Shoot` spec describes the Kubernetes cluster to create in Gardener — provider type, region, worker pools, networking, and the cloud profile to use.
 
-**Type definition** (from [comment by Roncossek, Jun 2026](https://github.com/gardenlinux/gardenlinux/issues/4070#issuecomment-4739839308)):
+**Type definition** :
 
 - [types_shoot.go](https://github.com/gardener/gardener/blob/master/pkg/apis/core/types_shoot.go)
 
@@ -159,7 +157,7 @@ The `Shoot` spec describes the Kubernetes cluster to create in Gardener — prov
 
 The release-workflow repo authenticates to the Gardener cluster using the `gardener/cc-utils` Kubernetes auth GitHub Action, which issues a short-lived kubeconfig via OIDC — no long-lived credentials are stored.
 
-**References** (from [comment by SujanaSubr, Jun 2026](https://github.com/gardenlinux/gardenlinux/issues/4070#issuecomment-4779081211)):
+**References** :
 
 - [kubernetes-auth action.yaml](https://github.com/gardener/cc-utils/blob/master/.github/actions/kubernetes-auth/action.yaml)
 - [kubernetes_auth.py](https://github.com/gardener/cc-utils/blob/master/.github/actions/kubernetes-auth/kubernetes_auth.py)
