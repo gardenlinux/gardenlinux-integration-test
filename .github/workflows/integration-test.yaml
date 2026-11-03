@@ -1,0 +1,49 @@
+name: Integration test
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Garden Linux version'
+        required: true
+      commit:
+        description: 'Garden Linux commit SHA'
+        required: true
+
+concurrency:
+  group: integration-test-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on:
+      - self-hosted
+      - solinas-small
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Authenticate to Vault via GitHub OIDC
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          method: jwt
+          url: ${{ vars.VAULT_ADDR }}
+          namespace: ${{ vars.VAULT_NAMESPACE }}
+          path: ${{ vars.VAULT_PATH }}
+          role: ${{ vars.VAULT_ROLE_INTTEST }}
+          secrets: ${{ vars.VAULT_SECRET_PATH_INTTEST }}
+
+      - name: Publish NSCloudProfile and ShootSpec
+        env:
+          VAULT_TOKEN: ${{ env.VAULT_TOKEN }}
+        run: |
+          go run . publish \
+            -v ${{ github.event.inputs.version }} \
+            -c ${{ github.event.inputs.commit }}
